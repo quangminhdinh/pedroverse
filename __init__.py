@@ -265,24 +265,36 @@ class ColorOperator(bpy.types.Operator):
             col = [context.window_manager["recolorpalette"][i][0], context.window_manager["recolorpalette"][i][1], context.window_manager["recolorpalette"][i][2]]
             lab_col = rgbCol2lab(col)
             new_palette.append([*lab_col[0:3], context.window_manager["recolorpalette"][i][3]])
-            self.report({'INFO'}, f"colors: {new_palette[i][0]} , {new_palette[i][1]} + ,  + {new_palette[i][2]} + ,  +{new_palette[i][3]}")
-        new_image = setPalette(self.image_filepath, old_palette=ColorOperator.palette, new_palette=new_palette)
+        new_image = setPalette(self.image_filepath, old_palette=context.window_manager["originalpalette"], new_palette=new_palette)
         saveNSetImage(new_image, "new_palette.png", context)
         return {'FINISHED'}
     
     def invoke(self, context, event):
+        
+        originalPalette, recolorPalette= checkImage(context, self)
+        for i in range(len(originalPalette)):
+            for j in range(len(originalPalette[0])):
+                context.window_manager["originalpalette"][i][j] = originalPalette[i][j]
+                context.window_manager["recolorpalette"][i][j] = recolorPalette[i][j]
+        
 
-        temp = context.window_manager["originalpalette"][self.id]
-        self.report({'INFO'}, f"type: {temp[0]} , {temp[1]} + ,  + {temp[2]} + ,  +{temp[3]}")
-        self.color = context.window_manager["recolorpalette"][self.id]
+        for i in range(4):
+            self.color[i] = context.window_manager["recolorpalette"][self.id][i]
 
 
-        context.scene.my_tools.color = context.window_manager["recolorpalette"][self.id]
-        self.report({'INFO'}, f"type: {self.color[0]} , {self.color[1]} + ,  + {self.color[2]} + ,  +{self.color[3]}")
+        for i in range(4):
+            context.scene.my_tools.color[i] = context.window_manager["recolorpalette"][self.id][i]
+
+        recolorPalette = context.window_manager["recolorpalette"]
+
+        self.report({'INFO'}, f"image2: {recolorPalette[self.id][0]}, {recolorPalette[self.id][1]}, {recolorPalette[self.id][2]}, {recolorPalette[self.id][3]}")
+
         return context.window_manager.invoke_props_dialog(self) 
     
     def draw(self, context):
+        
         layout = self.layout
+
         layout.template_color_picker(context.scene.my_tools, "color", value_slider=True)
 
 
@@ -318,6 +330,7 @@ class RecolourPanel(bpy.types.Panel):
         obj = context.active_object
         wm = context.window_manager
         checkWMVars()
+        
 
         gotPalette = False
         new_image = None
@@ -338,11 +351,12 @@ class RecolourPanel(bpy.types.Panel):
                             tempPalette, recolorPalette = getPalettes(bpy.path.abspath(new_image.filepath), context.scene.num_colors)
 
                             #setting variables for later use
-                            wm["recolorMaterial"] = new_material 
+                            wm["recolorMaterial"] = new_material
                             wm["recolorObjectName"] = obj.name
                             wm["recolorfilepath"] = bpy.path.abspath(new_image.filepath)
                             wm["recolorpalette"] = recolorPalette
                             wm['originalpalette'] = tempPalette
+                            wm["materialImageName"] = node.image.name
 
                             recolor_preview['main'].load("textureSelected", wm["recolorfilepath"], "IMAGE")
                             gotPalette = True
@@ -360,6 +374,7 @@ class RecolourPanel(bpy.types.Panel):
             wm["recolorpalette"] = []
             gotPalette = False
 
+        
 
         if(gotPalette):
             opalette = wm["originalpalette"]
@@ -391,7 +406,6 @@ def saveNLoadImage(node):
     os.makedirs(os.path.dirname(bpy.data.filepath) + "/new_palette", exist_ok=True)
     new_filepath = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png" 
 
-    #
     numpy_image = numpy.array(original_image.pixels)
     width, height = original_image.size
     pixels = numpy_image.reshape((height, width, 4))
@@ -419,7 +433,36 @@ def getPalettes(image_filepath, num):
     
     return palette, recolorPalette
 
+def checkImage(context, self):
+    wm = context.window_manager
+    
+    palette, recolorPalette = wm["originalpalette"], wm["recolorpalette"]
+        
+    mat = context.active_object.active_material
+    if mat.use_nodes:
+        for node in mat.node_tree.nodes:
+            
+            if node.type == 'TEX_IMAGE':
+                if (type(wm["recolorMaterial"]) == str or wm["recolorMaterial"].name != context.active_object.active_material.name or wm["materialImageName"] != node.image.name):
+                        
+                    wm["recolorMaterial"] = context.active_object.active_material
+                    new_image = saveNLoadImage(node)
+                    
+                    palette, recolorPalette = getPalettes(bpy.path.abspath(new_image.filepath), context.scene.num_colors)
+                    self.report({'INFO'}, f"image: {recolorPalette[self.id][0]}, {recolorPalette[self.id][1]}, {recolorPalette[self.id][2]}, {recolorPalette[self.id][3]}")
+                    old_palette = palette
+                    recolor_preview['main'].load("textureSelected", wm["recolorfilepath"], "IMAGE")
+                    image_filepath = new_image.filepath
+                    wm["recolorfilepath"] = bpy.path.abspath(new_image.filepath)
+                    wm["materialImageName"] = node.image.name
+    
+    return palette, recolorPalette
+
+
 def setPalette(image_filepath, old_palette, new_palette):
+    
+
+                    
     image_rgb = Image.open(image_filepath)
     image_lab = rgb2lab(image_rgb)
     
@@ -441,6 +484,7 @@ def saveNSetImage(new_image, image_name, context):
     material = context.window_manager["recolorMaterial"]
 
     wm = bpy.context.window_manager
+    
     if(wm["recolorObjectName"] != context.active_object.name or material==None):
         material = context.active_object.active_material.copy()
         context.active_object.data.materials.append(material)
@@ -451,7 +495,8 @@ def saveNSetImage(new_image, image_name, context):
     for node in context.active_object.active_material.node_tree.nodes:
         if node.type == 'TEX_IMAGE':
             node.image = bpy.data.images.load(path1)
-
+            wm["materialImageName"] = node.image.name
+            
 def checkWMVars():
     wm = bpy.context.window_manager
 
@@ -465,6 +510,8 @@ def checkWMVars():
         wm["recolorpalette"] = []
     if "recolorMaterial" not in wm:
         wm["recolorMaterial"] = None
+    if "materialImageName" not in wm:
+        wm["materialImageName"] = None
 
 
 
