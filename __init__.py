@@ -148,10 +148,20 @@ class TEXTURE_OT_LoadImage(bpy.types.Operator):
             
         if len(img_lists) > 0:
             tex_image = img_lists[0]
-            if not tex_image.image or not tex_image.image.filepath:
+            if not tex_image.image:
                 for im in img_lists:
                     im.image = img
                 return {'FINISHED'}
+            elif not tex_image.image.filepath:
+                temp_tex_image = tex_image.image.copy()
+                temp_tex_image.update()
+                temp_tex_image.filepath = os.path.dirname(bpy.data.filepath) + "/retexture_temp.png"
+                temp_tex_image.name = "retexture_temp"
+                temp_tex_image.file_format = "PNG"
+                temp_tex_image.save()
+                tex_image.image = temp_tex_image
+
+
             content_img = load_img(bpy.path.abspath(tex_image.image.filepath))
             style_img = load_img(self.filepath)
                         
