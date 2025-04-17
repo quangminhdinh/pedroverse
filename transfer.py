@@ -2,36 +2,28 @@ import math
 import itertools
 import time
 import numpy.linalg
-from .util import *
+from util import *
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 
 def modify_luminance(original_p, index, new_l):
     modified_p = original_p[:]
-    # print(modified_p)
 
     modified_p[index] = (new_l, *modified_p[index][-2:])
-    # print(modified_p)
     for i in range(index+1, len(original_p)):
-        # print("i = ", i, "Before Pal = ", modified_p)
         modified_p[i] = (min(modified_p[i][0], modified_p[i-1][0]), *modified_p[i][-2:])
-        # print("i = ", i, "After Pal = ", modified_p)
     for i in range(index-1, -1, -1):
-        # print("i = ", i, "Before Pal = ", modified_p)
         modified_p[i] = (max(modified_p[i][0], modified_p[i+1][0]), *modified_p[i][-2:])
-        # print("i = ", i, "After Pal = ", modified_p)
 
     return modified_p
 
 def luminance_transfer(color, original_p, modified_p):
-    # print(color[0])
     def interpolation(xa, xb, ya, yb, z):
         return (ya*(xb-z) + yb*(z-xa)) / (xb - xa)
 
     l = color[0]
     original_l = [100] + [l for l, a, b in original_p] + [0]
     modified_l = [100] + [l for l, a, b in modified_p] + [0]
-    # print(len(modified_l))
     if l > 100:
         return 100
     elif l <= 0:
@@ -204,14 +196,11 @@ def image_transfer(image, original_p, modified_p, sample_level=16, luminance_fla
     modified_p = [RegularLAB(c) for c in modified_p]
     level = 255 / (sample_level - 1)
     levels = [i * (255/(sample_level-1)) for i in range(sample_level)]
-    # print("Org = ", original_p, " Mod = ", modified_p, "Lev = ", level, "Dont Know", levels)
 
     #build sample color map
-    print('Build sample color map')
     t2 = time.time()
     sample_color_map = {}
     sample_colors = RGB_sample_color(sample_level)
-    # print(sample_colors)
 
     args = []
     for color in sample_colors:
@@ -230,11 +219,9 @@ def image_transfer(image, original_p, modified_p, sample_level=16, luminance_fla
             for i in range(len(sample_colors)):
                 sample_color_map[sample_colors[i]] = ByteLAB(lab[i])
 
-    print('Build sample color map time', time.time() - t2)
     t2 = time.time()
 
     #build color map
-    print('Build color map')
     color_map = {}
     colors = image.getcolors(image.width * image.height)
 
@@ -247,18 +234,14 @@ def image_transfer(image, original_p, modified_p, sample_level=16, luminance_fla
 
     for i in range(len(colors)):
         color_map[colors[i][1]] = tuple([int(x) for x in inter_result[i]])
-    print('Build color map time', time.time() - t2)
     t2 = time.time()
 
     #transfer image
-    print('Transfer image')
     result = Image.new('LAB', image.size)
     result_pixels = result.load()
     image_pixels = image.load()
     for i in range(image.width):
         for j in range(image.height):
             result_pixels[i, j] = color_map[image_pixels[i, j]]
-    print('Transfer image time', time.time() - t2)
 
-    print('Total time', time.time() - t)
     return result

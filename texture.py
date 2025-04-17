@@ -3,7 +3,6 @@ import os
 import sys
 import numpy as np
 import uuid
-from PIL import Image
 from . import globals
 import subprocess
 
@@ -100,12 +99,12 @@ class TEXTURE_OT_LoadImage(bpy.types.Operator):
 
             args = [
                 "python", dir_path+python_file,
-                bpy.path.abspath(tex_image.image.filepath),                # img_path
-                str(0.0),                      # blending_ratio
-                str(content_image_size),                      # content_image_size
-                dir_path + "/style_predict.tflite",     # style_predict_path
-                dir_path + "/style_transform.tflite",   # style_transform_path
-                self.filepath,                # filepath
+                bpy.path.abspath(tex_image.image.filepath),
+                str(0.0),
+                str(content_image_size),
+                dir_path + "/style_predict.tflite",
+                dir_path + "/style_transform.tflite",
+                self.filepath,
                 output_path
             ]
 

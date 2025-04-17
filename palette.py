@@ -2,7 +2,7 @@ import random
 import itertools
 import math
 from PIL import Image
-from .util import *
+from util import *
 
 def k_means(bins, means, k, maxiter=1000, black=True):
     #init
@@ -89,7 +89,6 @@ def init_means(bins, k):
 def build_palette(image, k=5, random_init=False, black=True):
     #get colors
     colors = image.getcolors(image.width * image.height)
-    print('colors num:', len(colors))
 
     #build bins
     bins = {}
@@ -107,7 +106,6 @@ def build_palette(image, k=5, random_init=False, black=True):
     means = k_means(bins, init, k, black=black)
     means.sort(reverse=True)
     colors = [tuple([int(x) for x in color]) for color in means]
-    print('Build palette', colors)
     return colors
 
 def draw_color(color, size=100):

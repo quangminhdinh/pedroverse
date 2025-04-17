@@ -2,15 +2,15 @@ import bpy
 import os
 import numpy as np
 
-from PIL import Image
-import cv2
 from bpy.utils import previews
-from skimage import color
+import subprocess
+import json
 
-from .palette import *
-from .util import *
-from .transfer import *
 from . import globals
+
+python_file = "/recolor_subprocess.py"
+folder_name = "/texture_recolor"
+dir_path = bpy.utils.script_paths(subdir="addons")[0] + folder_name
 
 def draw_palette_transfer(layout, context):
     layout.label(text="Palette Transfer", icon='COLOR')
@@ -30,11 +30,22 @@ def draw_palette_transfer(layout, context):
                         obj.data.materials.append(new_material)
 
                         OImageFilepath = saveOriginalImage(node)
-                        new_image = bpy.data.images.load(OImageFilepath)
-                        palettes = getPalettes(bpy.path.abspath(new_image.filepath), context.scene.num_colors)
+                        np.save(os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy", OImageFilepath)
+                        save_filepath = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png"
+
+                        
+                        args = [
+                            "python", dir_path + python_file, "getPalettes",
+                            os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy",
+                            save_filepath,
+                            str(context.scene.num_colors)
+                        ]
+                        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                        palettes = json.loads(result.stdout)
 
                         # Update global states
-                        globals.recolorfilepath[0] = bpy.path.abspath(new_image.filepath)
+                        globals.recolorfilepath[0] = save_filepath
                         globals.recolorpalette[0] = palettes[1]
                         globals.originalpalette[0] = palettes[0]
                         globals.recolorMaterial = new_material
@@ -47,7 +58,25 @@ def draw_palette_transfer(layout, context):
                         gotPalette = True
                         break
         elif (len(globals.recolorpalette[0]) != context.scene.num_colors):
-            palettes = getPalettes(globals.recolorfilepath[0], context.scene.num_colors)
+            new_image = bpy.data.images.load(globals.recolorfilepath[0])
+
+            pixels = np.array(new_image.pixels)
+
+            # Optionally reshape or modify the array (e.g., you can reshape it to (height, width, 4))
+            height, width = new_image.size
+            pixels_reshaped = pixels.reshape((height, width, 4))
+            pixels_rgb = pixels_reshaped[:, :, :3]
+
+            # Now we serialize the numpy array to a list (because JSON can't store numpy arrays directly)
+            np.save(os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy", pixels_rgb)
+            args = [
+                "python",dir_path + python_file, "getPalettes",
+                os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy",
+                os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png",
+                str(context.scene.num_colors)
+            ]
+            result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            palettes = json.loads(result.stdout)
             globals.recolorpalette[0] = palettes[1]
             globals.originalpalette[0] = palettes[0]
             gotPalette = True
@@ -58,6 +87,7 @@ def draw_palette_transfer(layout, context):
         layout.label(text="Select object with image texture")
         globals.recolorfilepath[0] = ""
         globals.recolorpalette[0] = []
+        globals.recolorObjectName = obj.name
         gotPalette = False
 
     if gotPalette:
@@ -93,29 +123,26 @@ class ColorOperator(bpy.types.Operator):
         for i in range(len(self.color)):
             globals.recolorpalette[self.imageType][self.id][i] = self.color[i]
 
-        new_palette = []
-        for i in range(len(globals.recolorpalette[self.imageType])):
-            col = [globals.recolorpalette[self.imageType][i][0], globals.recolorpalette[self.imageType][i][1], globals.recolorpalette[self.imageType][i][2]]
-            lab_col = rgbCol2lab(col)
-            new_palette.append([*lab_col[0:3], globals.recolorpalette[self.imageType][i][3]])
-        self.report({"INFO"}, (f"here2: {globals.recolorfilepath[self.imageType]}"))
-        self.report({"INFO"}, (f"here2: {globals.originalpalette[self.imageType][self.id][0]}, {globals.originalpalette[self.imageType][self.id][1]}, {globals.originalpalette[self.imageType][self.id][2]}, {globals.originalpalette[self.imageType][self.id][3]}"))
-        self.report({"INFO"}, (f"here2: {new_palette[self.id][0]}, {new_palette[self.id][1]}, {new_palette[self.id][2]}, {new_palette[self.id][3]}"))
+        args = [
+            "python", dir_path + python_file, "recolor",
+            str(self.imageType),
+            globals.recolorfilepath[self.imageType],
+            os.path.dirname(bpy.data.filepath) + "/new_palette" + "/",
+            json.dumps(globals.recolorpalette[self.imageType]),
+            json.dumps(globals.originalpalette[self.imageType])
+        ]
+        
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        filepath = result.stdout.strip()
 
-        new_image = setPalette(globals.recolorfilepath[self.imageType], old_palette=globals.originalpalette[self.imageType], new_palette=new_palette)
-
-        filename = "default.png"
-        filepath = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/"
-        self.report({"INFO"}, ("here3"))
-        if(self.imageType != 0):
-            filename = "texture.png"
-            globals.recoloredimagefilepath = filepath + filename
-        filepath = saveImage(new_image, filepath, filename, context)
-        self.report({"INFO"}, ("here4"))
+        self.report({"INFO"}, (result.stderr))
         if(self.imageType == 0):
             setImage(context, filepath)
         else:
-            showImage(filepath)
+            globals.recoloredimagefilepath = filepath
+            if "textureTransfer" in globals.recolor_preview['main']:
+                del globals.recolor_preview["main"]['textureTransfer']
+            globals.recolor_preview['main'].load("textureTransfer", filepath, "IMAGE")
         self.report({"INFO"}, ("here5"))
         return {'FINISHED'}
     
@@ -142,8 +169,25 @@ def updateTextPalette(context, filepath):
         del globals.recolor_preview["main"]['textureTransfer']
     globals.recolor_preview['main'].load("textureTransfer", globals.recolorfilepath[1], "IMAGE")
     globals.recoloredimagefilepath = ""
+    new_image = bpy.data.images.load(globals.recolorfilepath[1])
 
-    palettes = getPalettes(globals.recolorfilepath[1], context.scene.num_colors_text)
+    pixels = np.array(new_image.pixels)
+
+    # Optionally reshape or modify the array (e.g., you can reshape it to (height, width, 4))
+    height, width = new_image.size
+    pixels_reshaped = pixels.reshape((height, width, 4))
+    pixels_rgb = pixels_reshaped[:, :, :3] * 255
+
+    # Now we serialize the numpy array to a list (because JSON can't store numpy arrays directly)
+    np.save(os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy", pixels_rgb)
+    args = [
+        "python", dir_path + python_file, "getPalettes",
+        os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy",
+        os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png",
+        str(context.scene.num_colors_text)
+    ]
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    palettes = json.loads(result.stdout)
     globals.recolorpalette[1] = palettes[1]
     globals.originalpalette[1] = palettes[0]
     
@@ -178,38 +222,7 @@ bpy.types.Scene.num_colors_text = bpy.props.IntProperty(
     update=num_colors_changed 
 )
 
-     
-def saveOriginalImage(node):
-    original_image = node.image
-
-    #should probably change how the image is saved giving the user an option to say where to save the image
-    os.makedirs(os.path.dirname(bpy.data.filepath) + "/new_palette", exist_ok=True)
-    new_filepath = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png" 
-
-    numpy_image = numpy.array(original_image.pixels)
-    width, height = original_image.size
-    pixels = numpy_image.reshape((height, width, 4))
-    pixels = pixels[:, :, :3] * 255
-
-    imageflipped = Image.fromarray(pixels.astype(np.uint8))
-    image = imageflipped.transpose(Image.FLIP_TOP_BOTTOM)
-    image.save(new_filepath)
-    return new_filepath
-
-def getPalettes(image_filepath, num):
-    image_rgb = Image.open(image_filepath)
-    image_lab = rgb2lab(image_rgb)
-    palette = build_palette(image_lab, num)
-
-    recolorPalette = [RegularRGB(LABtoRGB(RegularLAB(c))) for c in palette]
-
-    for i in range(len(palette)):
-        palette[i] = [*palette[i], 1.0]
-        recolorPalette[i] = [*recolorPalette[i], 1.0]
-        for j in range(3):
-            recolorPalette[i][j] = recolorPalette[i][j]/255.0
     
-    return palette, recolorPalette
 
 def checkImage(context, self):
     mat = context.active_object.active_material
@@ -221,13 +234,21 @@ def checkImage(context, self):
                         
                     globals.recolorMaterial = context.active_object.active_material
                     new_image_filepath = saveOriginalImage(node)
-                    new_image = new_image=bpy.data.images.load(new_image_filepath)
+
+                    np.save(os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy", new_image_filepath)
+                    args = [
+                        "python",dir_path + python_file, "getPalettes",
+                        os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "temp.npy",
+                        os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png",
+                        str(context.scene.num_colors)
+                    ]
+                    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    palettes = json.loads(result.stdout)
                     
-                    palettes = getPalettes(bpy.path.abspath(new_image.filepath), context.scene.num_colors)
                     globals.recolorpalette[0] = palettes[1]
                     globals.originalpalette[0] = palettes[0]
                     
-                    globals.recolorfilepath[0] = bpy.path.abspath(new_image.filepath)
+                    globals.recolorfilepath[0] = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png"
                     globals.materialImageName = node.image.name
 
                     if("textureSelected" in  globals.recolor_preview['main']):
@@ -236,30 +257,21 @@ def checkImage(context, self):
 
     
 
-def setPalette(image_filepath, old_palette, new_palette):
-    image_rgb = Image.open(image_filepath)
-    image_lab = rgb2lab(image_rgb)
-    
-    new_image = image_transfer(image_lab, old_palette, new_palette, sample_level=10, luminance_flag=False)
-    return new_image
+def saveOriginalImage(node):
+    original_image = node.image
 
-def rgbCol2lab(old_color):
-    lab_col = color.rgb2lab(old_color)
-    lab_col = [int(lab_col[0]*255.0/100.0), int(lab_col[1]+128), int(lab_col[2]+128)]
-    return lab_col
+    #should probably change how the image is saved giving the user an option to say where to save the image
+    os.makedirs(os.path.dirname(bpy.data.filepath) + "/new_palette", exist_ok=True)
+    new_filepath = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/" + "original.png" 
 
+    numpy_image = np.array(original_image.pixels)
+    width, height = original_image.size
+    pixels = numpy_image.reshape((height, width, 4))
+    pixels = pixels[:, :, :3] * 255
+    pixels = np.flipud(pixels)
 
-def saveImage(new_image, image_path, image_name, context):
-    temp = cv2.cvtColor(numpy.array(lab2rgb(new_image)), cv2.COLOR_RGB2BGR)
-    path1 = image_path + image_name
+    return pixels
 
-    cv2.imwrite(path1,temp)
-    return path1
-
-def showImage(image_path):
-    if "textureTransfer" in globals.recolor_preview['main']:
-        del globals.recolor_preview["main"]['textureTransfer']
-    globals.recolor_preview['main'].load("textureTransfer", image_path, "IMAGE")
 
 def setImage(context, image_path):
     material = globals.recolorMaterial
@@ -290,7 +302,7 @@ def register():
     bpy.utils.register_class(ColorOperator)
     bpy.utils.register_class(TextureImageSelect)
 
-    bpy.types.Scene.len_palette = bpy.props.IntProperty(name="Palette Length",
+    bpy.types.Scene.ObjectName = bpy.props.IntProperty(name="Palette Length",
         description="Length of the color palette",
         default=2)
 
@@ -303,5 +315,5 @@ def unregister():
     bpy.utils.unregister_class(TextureImageSelect)
 
     del bpy.types.Scene.pick_colors
-    del bpy.types.Scene.len_palette
+    del bpy.types.Scene.ObjectName
     del bpy.types.Scene.num_colors
