@@ -3,7 +3,8 @@ import itertools
 import time
 import numpy.linalg
 from .util import *
-from multiprocessing import Pool, cpu_count
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
 
 def modify_luminance(original_p, index, new_l):
     modified_p = original_p[:]
@@ -216,19 +217,18 @@ def image_transfer(image, original_p, modified_p, sample_level=16, luminance_fla
     for color in sample_colors:
         args.append((RegularLAB(color), original_p, modified_p))
 
-    if luminance_flag:
-        with Pool(cpu_count()-1) as pool:
-            l = pool.map(luminance_transfer_mt, args)
-            lab = pool.map(multiple_color_transfer_mt, args)
+    with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() - 1) as executor:
+        if luminance_flag:
+            l = list(executor.map(luminance_transfer_mt, args))
+            lab = list(executor.map(multiple_color_transfer_mt, args))
 
-        for i in range(len(sample_colors)):
-            sample_color_map[sample_colors[i]] = ByteLAB((l[i], *lab[i][-2:]))
-    else:
-        with Pool(cpu_count()-1) as pool:
-            lab = pool.map(multiple_color_transfer_mt, args)
+            for i in range(len(sample_colors)):
+                sample_color_map[sample_colors[i]] = ByteLAB((l[i], *lab[i][-2:]))
+        else:
+            lab = list(executor.map(multiple_color_transfer_mt, args))
 
-        for i in range(len(sample_colors)):
-            sample_color_map[sample_colors[i]] = ByteLAB(lab[i])
+            for i in range(len(sample_colors)):
+                sample_color_map[sample_colors[i]] = ByteLAB(lab[i])
 
     print('Build sample color map time', time.time() - t2)
     t2 = time.time()
@@ -242,8 +242,8 @@ def image_transfer(image, original_p, modified_p, sample_level=16, luminance_fla
     for _, color in colors:
         nc = nearest_color(color, level, levels)
         args.append((color, nc, sample_color_map))
-    with Pool(cpu_count()-1) as pool:
-        inter_result = pool.map(trilinear_interpolation_mt, args)
+    with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() - 1) as executor:
+        inter_result = list(executor.map(trilinear_interpolation_mt, args))
 
     for i in range(len(colors)):
         color_map[colors[i][1]] = tuple([int(x) for x in inter_result[i]])

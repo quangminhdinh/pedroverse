@@ -1,14 +1,11 @@
 import bpy
 import os
-import sys
 import numpy as np
-import uuid
 
 from PIL import Image
 import cv2
 from bpy.utils import previews
 from skimage import color
-from . import texture
 
 from .palette import *
 from .util import *
@@ -50,9 +47,10 @@ def draw_palette_transfer(layout, context):
                         gotPalette = True
                         break
         elif (len(globals.recolorpalette[0]) != context.scene.num_colors):
-            palettes = getPalettes(bpy.path.abspath(new_image.filepath), context.scene.num_colors)
+            palettes = getPalettes(globals.recolorfilepath[0], context.scene.num_colors)
             globals.recolorpalette[0] = palettes[1]
             globals.originalpalette[0] = palettes[0]
+            gotPalette = True
 
         else:
             gotPalette = True
@@ -89,28 +87,36 @@ class ColorOperator(bpy.types.Operator):
     imageType: bpy.props.IntProperty(name="Number", default=0)
 
     def execute(self, context):
-        self.color = context.scene.pick_colors.color
-        globals.recolorpalette[self.imageType][self.id] = self.color
+        self.report({"INFO"}, ("here1"))
+        for i in range(len(self.color)):
+            self.color[i] = context.scene.pick_colors.color[i]
+        for i in range(len(self.color)):
+            globals.recolorpalette[self.imageType][self.id][i] = self.color[i]
 
         new_palette = []
         for i in range(len(globals.recolorpalette[self.imageType])):
             col = [globals.recolorpalette[self.imageType][i][0], globals.recolorpalette[self.imageType][i][1], globals.recolorpalette[self.imageType][i][2]]
             lab_col = rgbCol2lab(col)
             new_palette.append([*lab_col[0:3], globals.recolorpalette[self.imageType][i][3]])
-        new_image = setPalette(globals.recolorfilepath[self.imageType], old_palette=globals.originalpalette[self.imageType], new_palette=new_palette)
-        filename = "defualt.png"
-        filepath = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/"
+        self.report({"INFO"}, (f"here2: {globals.recolorfilepath[self.imageType]}"))
+        self.report({"INFO"}, (f"here2: {globals.originalpalette[self.imageType][self.id][0]}, {globals.originalpalette[self.imageType][self.id][1]}, {globals.originalpalette[self.imageType][self.id][2]}, {globals.originalpalette[self.imageType][self.id][3]}"))
+        self.report({"INFO"}, (f"here2: {new_palette[self.id][0]}, {new_palette[self.id][1]}, {new_palette[self.id][2]}, {new_palette[self.id][3]}"))
 
+        new_image = setPalette(globals.recolorfilepath[self.imageType], old_palette=globals.originalpalette[self.imageType], new_palette=new_palette)
+
+        filename = "default.png"
+        filepath = os.path.dirname(bpy.data.filepath) + "/new_palette" + "/"
+        self.report({"INFO"}, ("here3"))
         if(self.imageType != 0):
             filename = "texture.png"
             globals.recoloredimagefilepath = filepath + filename
         filepath = saveImage(new_image, filepath, filename, context)
-        
+        self.report({"INFO"}, ("here4"))
         if(self.imageType == 0):
             setImage(context, filepath)
         else:
             showImage(filepath)
-
+        self.report({"INFO"}, ("here5"))
         return {'FINISHED'}
     
     def invoke(self, context, event):
@@ -140,6 +146,7 @@ def updateTextPalette(context, filepath):
     palettes = getPalettes(globals.recolorfilepath[1], context.scene.num_colors_text)
     globals.recolorpalette[1] = palettes[1]
     globals.originalpalette[1] = palettes[0]
+    
 
 class TextureImageSelect(bpy.types.Operator):
     bl_idname = "texture.load_image_s"

@@ -12,9 +12,9 @@ bl_info = {
 
 import bpy
 from bpy.utils import previews
-from .texture import *
-from .recolor import *
 
+from .recolor import *
+from .texture import *
 
 from . import globals
 
@@ -31,7 +31,7 @@ class RecolourPanel(bpy.types.Panel):
 
     def draw(self, context):
         glob_layout = self.layout
-        
+        global temp, tries
         layout1 = glob_layout.box()
         draw_style_transfer_layout(layout1, context)
 

@@ -3,14 +3,15 @@ import os
 import sys
 import numpy as np
 import uuid
-import tensorflow as tf
 from PIL import Image
 from . import globals
+import subprocess
 
 
 folder_name = "/texture_recolor"
 
 os.environ['TFHUB_MODEL_LOAD_FORMAT'] = 'COMPRESSED'
+dir_path = bpy.utils.script_paths(subdir="addons")[0] + folder_name
 style_predict_path = bpy.utils.script_paths(subdir="addons")[0] + folder_name + "/style_predict.tflite"
 style_transform_path = bpy.utils.script_paths(subdir="addons")[0] + folder_name + "/style_transform.tflite"
 content_blending_ratio = 0 
@@ -39,78 +40,7 @@ def draw_style_transfer_layout(layout, context):
         temp = layout.operator("texture.load_image", text="Texture Object")
         temp.filepath = globals.recoloredimagefilepath if globals.recoloredimagefilepath != "" else globals.recolorfilepath[1]
 
-def run_style_predict(preprocessed_style_image):
-  # Load the model.
-  interpreter = tf.lite.Interpreter(model_path=style_predict_path)
 
-  # Set model input.
-  interpreter.allocate_tensors()
-  input_details = interpreter.get_input_details()
-  interpreter.set_tensor(input_details[0]["index"], preprocessed_style_image)
-
-  # Calculate style bottleneck.
-  interpreter.invoke()
-  style_bottleneck = interpreter.tensor(
-      interpreter.get_output_details()[0]["index"]
-      )()
-
-  return style_bottleneck
-
-def run_style_transform(style_bottleneck, preprocessed_content_image):
-  # Load the model.
-  interpreter = tf.lite.Interpreter(model_path=style_transform_path)
-
-  # Set model input.
-  input_details = interpreter.get_input_details()
-  for index in range(len(input_details)):
-    if input_details[index]["name"]=='content_image':
-      index = input_details[index]["index"]
-      interpreter.resize_tensor_input(index, [1, content_image_size, content_image_size, 3])
-  interpreter.allocate_tensors()
-
-  # Set model inputs.
-  for index in range(len(input_details)):
-    if input_details[index]["name"]=='Conv/BiasAdd':
-      interpreter.set_tensor(input_details[index]["index"], style_bottleneck)
-    elif input_details[index]["name"]=='content_image':
-      interpreter.set_tensor(input_details[index]["index"], preprocessed_content_image)
-  interpreter.invoke()
-
-  # Transform content image.
-  stylized_image = interpreter.tensor(
-      interpreter.get_output_details()[0]["index"]
-      )()
-
-  return stylized_image
-
-def tensor_to_image(tensor):
-    tensor = tensor*255
-    tensor = np.array(tensor, dtype=np.uint8)
-    if np.ndim(tensor)>3:
-        assert tensor.shape[0] == 1
-        tensor = tensor[0]
-    return tensor
-
-def load_img(path_to_img):
-  img = tf.io.read_file(path_to_img)
-  img = tf.io.decode_image(img, channels=3)
-  img = tf.image.convert_image_dtype(img, tf.float32)
-  img = img[tf.newaxis, :]
-
-  return img
-
-def preprocess_image(image, target_dim):
-  # Resize the image so that the shorter dimension becomes 256px.
-  shape = tf.cast(tf.shape(image)[1:-1], tf.float32)
-  short_dim = min(shape)
-  scale = target_dim / short_dim
-  new_shape = tf.cast(shape * scale, tf.int32)
-  image = tf.image.resize(image, new_shape)
-
-  # Central crop the image.
-  image = tf.image.resize_with_crop_or_pad(image, target_dim, target_dim)
-
-  return image
 
 
 class TEXTURE_OT_LoadImage(bpy.types.Operator):
@@ -121,6 +51,7 @@ class TEXTURE_OT_LoadImage(bpy.types.Operator):
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
 
     def execute(self, context):
+        global dir_path
         obj = context.object
         if not obj or obj.type != 'MESH':
             self.report({'WARNING'}, "Select a mesh object first")
@@ -163,29 +94,28 @@ class TEXTURE_OT_LoadImage(bpy.types.Operator):
                 tex_image.image = temp_tex_image
 
 
-            content_img = load_img(bpy.path.abspath(tex_image.image.filepath))
-            style_img = load_img(self.filepath)
-                        
-            prev = preprocess_image(content_img, 256)
-            
-            content_img = preprocess_image(content_img, content_image_size)
-            style_img = preprocess_image(style_img, 256)
-            print(content_img.shape)
-            
-            style_bottleneck_content = run_style_predict(
-                prev
-            )
-            style_bottleneck = run_style_predict(tf.constant(style_img))
-            style_bottleneck_blended = (context.scene.blending_ratio/100.0) * style_bottleneck_content \
-                           + (1 - (context.scene.blending_ratio/100.0)) * style_bottleneck
-            stylized_img = run_style_transform(style_bottleneck_blended, content_img)
-            
-            stylized_img = tensor_to_image(stylized_img)
-            if stylized_img is None:
-                self.report({'ERROR'}, "Style Transfer Failed")
-                return {'CANCELLED'}
+            python_file = "/texture_subprocess.py"
+
             output_path = bpy.path.abspath(f"//output_{uuid.uuid4().hex}.png")
-            Image.fromarray(stylized_img).save(output_path)
+
+            args = [
+                "python", dir_path+python_file,
+                bpy.path.abspath(tex_image.image.filepath),                # img_path
+                str(0.0),                      # blending_ratio
+                str(content_image_size),                      # content_image_size
+                dir_path + "/style_predict.tflite",     # style_predict_path
+                dir_path + "/style_transform.tflite",   # style_transform_path
+                self.filepath,                # filepath
+                output_path
+            ]
+
+            result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.report({"INFO"}, result.stdout)
+            if result.stdout == "":
+                self.report({'ERROR'}, "Style Transfer Failed")
+                self.report({'ERROR'}, result.stderr)
+                return {'CANCELLED'}
+            
             ou_img = bpy.data.images.load(output_path, check_existing=True)
             for im in img_lists:
                 im.image = ou_img
