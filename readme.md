@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/logo.png" alt="PedroVerse Logo" width="200"/>
+</p>
+
 # PedroVerse: 3D Mesh Stylization in Blender
 
 ## Features
@@ -10,12 +14,11 @@
   - Brushstroke Painterly
   - SLIC Superpixel Art
 
-   
 ## Installation
-1.  Download pedroverse.zip (see Releases)
-2.  Extract and run the setup_venv.cmd
+1.  Download `pedroverse.zip` (see Releases)
+2.  Extract and run the `setup_venv.cmd`
 3.  In Blender, go to Preferences > Add-ons > Install
-4.  Select the texture_recolor.zip from the extracted folder
+4.  Select the `texture_recolor.zip` from the extracted folder
 5.  Enable the add-on
 
 ## Usage
@@ -27,13 +30,16 @@
 
 ## Examples
 <p align="center">
-  <img src="images/fig2.png" alt="Before" width="45%" />
-  <img src="images/fig3.png" alt="After" width="45%" />
+  <img src="images/fig2.png" alt="Stylization Example 1" width="60%" />
+</p>
+<p align="center">
+  <img src="images/fig3.png" alt="Stylization Example 2" width="60%" />
+</p>
+<p align="center">
+  <img src="images/fig4.png" alt="Stylization Example 3" width="60%" />
 </p>
 
 ## License
 This project is licensed under the MIT License.
 
 You are free to use, modify, and distribute this software with proper attribution.
-
-
