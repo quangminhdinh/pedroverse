@@ -27,8 +27,8 @@
 
 ## Examples
 <p align="center">
-  <img src="images/fig1.png" alt="Before" width="45%" />
-  <img src="images/fig2.png" alt="After" width="45%" />
+  <img src="images/fig2.png" alt="Before" width="45%" />
+  <img src="images/fig3.png" alt="After" width="45%" />
 </p>
 
 ## License
