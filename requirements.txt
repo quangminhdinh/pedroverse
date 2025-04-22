@@ -1,0 +1,8 @@
+torch
+opencv-contrib-python
+numpy
+scipy
+Pillow
+tensorflow
+git+https://github.com/sedthh/pyxelate.git
+scikit-image
