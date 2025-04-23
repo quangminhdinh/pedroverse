@@ -14,6 +14,10 @@ save_path = ""
 
 def draw_palette_transfer(layout, context):
     #have to do it here as it requires it to be in the draw function
+    if bpy.data.filepath == "":
+        layout.label(text="Please save file first")
+        return
+    
     global save_path
     if(save_path == ""):
         save_path = os.path.dirname(bpy.data.filepath) + "/new_palette"
@@ -118,6 +122,9 @@ class ColorOperator(bpy.types.Operator):
         filepath = result.stdout.strip()
 
         if(self.imageType == 0):
+            if "textureSelected" in globals.recolor_preview['main']:
+                del globals.recolor_preview["main"]['textureSelected']
+            globals.recolor_preview['main'].load("textureSelected", filepath, "IMAGE")
             setImage(context, filepath)
 
         else:
